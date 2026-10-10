@@ -182,37 +182,60 @@ export function resolveTurn(state, orders) {
     }
   }
 
-  // 2b. Move torpedoes and check collisions. Torps travel at TORP_SPEED
-  // (hex-pixel units per turn). Sub-stepped so fast torps don't skip hexes.
-  // If a torp enters a ship's hex, it hits.
+  // 2b. Move torpedoes and check collisions — SIMULTANEOUS. Both torps and
+  // ships move over the turn; at each sub-step fraction f, if a torp and a
+  // ship are in the same hex, the torp hits. Ships continue their paths
+  // even after being hit (unless destroyed).
   const TORP_SPEED = 4.0;
   const torpsToRemove = new Set();
+  // Precompute ship pixel paths for interpolation.
+  const shipPaths = {};
+  for (const ship of ships) {
+    const st = starts[ship.id];
+    const p0 = hexToPixel(st.col, st.row, 1);
+    const p1 = hexToPixel(ship.col, ship.row, 1);
+    shipPaths[ship.id] = { p0, p1 };
+  }
   for (const torp of state.torps) {
     if (torpsToRemove.has(torp.id)) continue;
     const steps = Math.ceil(TORP_SPEED / 0.5);
-    for (let s = 0; s < steps; s++) {
-      torp.x += (torp.dx * TORP_SPEED) / steps;
-      torp.y += (torp.dy * TORP_SPEED) / steps;
-      const hex = pixelToHex(torp.x, torp.y, 1);
+    const x0 = torp.x, y0 = torp.y;
+    let hitDone = false;
+    for (let s = 1; s <= steps; s++) {
+      const f = s / steps;
+      const tx = x0 + torp.dx * TORP_SPEED * f;
+      const ty = y0 + torp.dy * TORP_SPEED * f;
+      const hex = pixelToHex(tx, ty, 1);
       if (!hex || !inBounds(hex.col, hex.row)) {
-        torpsToRemove.add(torp.id); // flew offscreen
+        torpsToRemove.add(torp.id);
+        torp.x = tx; torp.y = ty;
+        hitDone = true; // done (offscreen)
         break;
       }
-      // Collision: enemy ship (not owner, not teammate) in this hex.
-      let hit = false;
       for (const ship of ships) {
         if (!ship.alive || ship.id === torp.ownerId) continue;
         if (state.teamPlay && ship.race === torp.ownerRace) continue;
-        if (ship.col === hex.col && ship.row === hex.row) {
+        const path = shipPaths[ship.id];
+        const sx = path.p0.x + (path.p1.x - path.p0.x) * f;
+        const sy = path.p0.y + (path.p1.y - path.p0.y) * f;
+        // Hit if torp and ship are close (paths cross mid-turn).
+        if (Math.hypot(tx - sx, ty - sy) < 1.0) {
+          const hex = pixelToHex(tx, ty, 1) || pixelToHex(sx, sy, 1);
+          const at = hex && inBounds(hex.col, hex.row) ? { col: hex.col, row: hex.row } : { col: ship.col, row: ship.row };
           damage[ship.id] = (damage[ship.id] || 0) + torp.damage;
-          events.push({ t: 'hit', id: ship.id, dmg: torp.damage, via: 'torpedoes', by: torp.ownerId, at: { col: hex.col, row: hex.row } });
-          events.push({ t: 'torp_hit', torpId: torp.id, at: { col: hex.col, row: hex.row } });
+          events.push({ t: 'hit', id: ship.id, dmg: torp.damage, via: 'torpedoes', by: torp.ownerId, at });
+          events.push({ t: 'torp_hit', torpId: torp.id, at });
           torpsToRemove.add(torp.id);
-          hit = true;
+          torp.x = tx; torp.y = ty;
+          hitDone = true;
           break;
         }
       }
-      if (hit) break;
+      if (hitDone) break;
+    }
+    if (!hitDone) {
+      torp.x = x0 + torp.dx * TORP_SPEED;
+      torp.y = y0 + torp.dy * TORP_SPEED;
     }
   }
   state.torps = state.torps.filter((t) => !torpsToRemove.has(t.id));
