@@ -30,18 +30,60 @@ export function makeShip({ race, name, captain, col, row, isPlayer }) {
   };
 }
 
-// Phase 0 demo game: player (Federation) vs one AI (Klingon).
-export function newGame(playerName = 'Jameson') {
+const AI_NAMES = {
+  federation: { ships: ['U.S.S. Enterprise', 'U.S.S. Voyager', 'U.S.S. Defiant'], captains: ['Picard', 'Janeway', 'Sisko'] },
+  klingon:    { ships: ['I.K.S. Negh\'Var', 'I.K.S. Vor\'cha', 'I.K.S. Maht\'H'], captains: ['Martok', 'Gowron', 'Kang'] },
+  borg:       { ships: ['Borg Cube 472', 'Borg Sphere 881', 'Borg Cube 119'], captains: ['Locutus', 'The Collective', 'Seven'] },
+  dominion:   { ships: ['Jem\'Hadar Fighter', 'Dominion Battleship', 'Jem\'Hadar Cruiser'], captains: ['Weyoun', 'The Founders', 'Dukat'] },
+  tholian:    { ships: ['Tholian Vessel', 'Tholian Cruiser', 'Tholian Destroyer'], captains: ['Assembly Prime', 'Loskene', 'Tholian High Command'] },
+};
+
+const START_SPOTS = [
+  { col: 2, row: 5 }, { col: 11, row: 5 },
+  { col: 2, row: 8 }, { col: 11, row: 8 },
+];
+
+// setup: { playerName, shipName, playerRace, aiRaces: ['klingon',...],
+//          sentries: 0|1|2, teamPlay: bool }
+export function newGame(setup = {}) {
+  const {
+    playerName = 'Jameson',
+    shipName = 'U.S.S. Reliant',
+    playerRace = 'federation',
+    aiRaces = ['klingon'],
+    sentries = 0,
+    teamPlay = false,
+  } = setup;
+  const ships = [
+    makeShip({ race: playerRace, name: shipName, captain: playerName, col: START_SPOTS[0].col, row: START_SPOTS[0].row, isPlayer: true }),
+  ];
+  const usedNames = new Set([shipName]);
+  aiRaces.forEach((race, i) => {
+    const pool = AI_NAMES[race] || AI_NAMES.klingon;
+    const shipNameAi = pool.ships.find((n) => !usedNames.has(n)) || `${pool.ships[0]} ${i + 2}`;
+    usedNames.add(shipNameAi);
+    const spot = START_SPOTS[(i + 1) % START_SPOTS.length];
+    ships.push(makeShip({
+      race, name: shipNameAi,
+      captain: pool.captains[i % pool.captains.length],
+      col: spot.col, row: spot.row, isPlayer: false,
+    }));
+  });
+  // Sentries at fixed midfield spots, kept clear of ships.
+  const sentrySpots = [{ col: 6, row: 3 }, { col: 7, row: 9 }];
+  const sentryList = [];
+  for (let i = 0; i < sentries && i < sentrySpots.length; i++) {
+    sentryList.push({ id: `sentry-${i + 1}`, col: sentrySpots[i].col, row: sentrySpots[i].row });
+  }
   return {
-    version: 1,
+    version: 2,
     turn: 1,
     phase: 'orders', // orders -> resolved -> orders ... -> gameover
     winner: null,
+    teamPlay: !!teamPlay,
     rngSeed: (Math.random() * 0xffffffff) >>> 0,
-    ships: [
-      makeShip({ race: 'federation', name: 'U.S.S. Reliant', captain: playerName, col: 2, row: 6, isPlayer: true }),
-      makeShip({ race: 'klingon', name: 'I.K.S. Rotarran', captain: 'Azetbur', col: 8, row: 6, isPlayer: false }),
-    ],
+    ships,
+    sentries: sentryList,
     log: [],
   };
 }

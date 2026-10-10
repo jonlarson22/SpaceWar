@@ -177,12 +177,27 @@ export class Board {
   }
 
   drawShips(ctx, state) {
+    // Sentry guns: orange diamonds, always visible.
+    for (const sentry of (state.sentries || [])) {
+      const s = this.toScreen(sentry.col, sentry.row);
+      const r = this.size * 0.55;
+      ctx.fillStyle = '#ff8c3a';
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y - r); ctx.lineTo(s.x + r, s.y);
+      ctx.lineTo(s.x, s.y + r); ctx.lineTo(s.x - r, s.y);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#ffd0a0'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
     for (const ship of state.ships) {
       if (!ship.alive && !this.doomed.has(ship.id)) continue;
+      // Cloaked enemy ships are invisible. Your own cloaked ship shows faint.
+      if (ship.cloaked && !ship.isPlayer) continue;
       const override = this.shipScreenPos[ship.id];
       const s = override || this.toScreen(ship.col, ship.row);
       const img = spriteFor(ship.race);
       const dim = this.size * 1.5;
+      ctx.save();
+      if (ship.cloaked) ctx.globalAlpha = 0.35;
       if (img) {
         ctx.imageSmoothingEnabled = false; // keep pixel-art crisp
         ctx.drawImage(img, s.x - dim / 2, s.y - dim / 2, dim, dim);
@@ -190,6 +205,7 @@ export class Board {
         ctx.fillStyle = '#fff';
         ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, 7); ctx.fill();
       }
+      ctx.restore();
       if (ship.isPlayer) {
         ctx.strokeStyle = '#ffd75e';
         ctx.lineWidth = 2;

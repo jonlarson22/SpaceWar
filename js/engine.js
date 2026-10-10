@@ -16,9 +16,11 @@ export function makeRng(seed) {
 // Hexes this ship may move to: distance within [speed-2, speed+2], capped by engine.
 // New speed becomes the distance traveled ("the distance of your destination
 // from your present location determines your final speed").
-export function validDestinations(ship) {
-  const minD = Math.max(0, ship.speed - 2);
-  const maxD = Math.min(ship.speed + 2, ship.engine);
+// accelBonus: Tholian hyper-acceleration doubles the rate when not firing.
+export function validDestinations(ship, accelBonus = 0) {
+  const range = 2 + accelBonus;
+  const minD = Math.max(0, ship.speed - range);
+  const maxD = Math.min(ship.speed + range, ship.engine);
   const from = { col: ship.col, row: ship.row };
   const out = [];
   for (let r = 0; r < ROWS; r++) {
@@ -59,25 +61,60 @@ export function resolveTurn(state, orders) {
     const o = orders[ship.id];
     const from = { col: ship.col, row: ship.row };
     starts[ship.id] = { col: from.col, row: from.row, speed: ship.speed };
+    const atk = o ? o.attack : 'none';
     let dest = { ...from };
-    if (o && o.moveTo && inBounds(o.moveTo.col, o.moveTo.row)) {
+    // Borg transwarp: instant move to any hex (then stopped).
+    if (ship.race === 'borg' && atk === 'none' && o && o.special === 'transwarp' &&
+        o.moveTo && inBounds(o.moveTo.col, o.moveTo.row)) {
+      dest = { col: o.moveTo.col, row: o.moveTo.row };
+      events.push({ t: 'transwarp', id: ship.id, from, to: { ...dest } });
+    } else if (o && o.moveTo && inBounds(o.moveTo.col, o.moveTo.row)) {
       const d = hexDistance(from, o.moveTo);
-      const minD = Math.max(0, ship.speed - 2);
-      const maxD = Math.min(ship.speed + 2, ship.engine);
+      // Tholian hyper-acceleration: double rate when not firing.
+      const range = (ship.race === 'tholian' && atk === 'none') ? 4 : 2;
+      const minD = Math.max(0, ship.speed - range);
+      const maxD = Math.min(ship.speed + range, ship.engine);
       if (d >= minD && d <= maxD) dest = { col: o.moveTo.col, row: o.moveTo.row };
     }
     if (dest.col !== from.col || dest.row !== from.row) {
-      events.push({ t: 'move', id: ship.id, from, to: { ...dest } });
+      const isTranswarp = ship.race === 'borg' && atk === 'none' && o && o.special === 'transwarp';
+      if (!isTranswarp) events.push({ t: 'move', id: ship.id, from, to: { ...dest } });
     }
     ship.col = dest.col;
     ship.row = dest.row;
-    ship.speed = hexDistance(from, dest);
+    // Transwarp leaves the ship stopped; otherwise speed = distance.
+    ship.speed = (ship.race === 'borg' && atk === 'none' && o && o.special === 'transwarp')
+      ? 0 : hexDistance(from, dest);
+    // Klingon cloak: active any turn the ship does not fire.
+    if (ship.race === 'klingon') ship.cloaked = (atk === 'none');
+    // Reset per-turn flags.
+    ship.ablative = false;
+  }
+
+  // 1b. Non-firing specials (regen). Applied after movement, before damage.
+  for (const ship of ships) {
+    if (!ship.alive) continue;
+    const o = orders[ship.id];
+    const atk = o ? o.attack : 'none';
+    if (atk !== 'none') continue;
+    if (ship.race === 'borg' && o && o.special === 'regen') {
+      ship.shields = Math.min(ship.maxShields, ship.shields + 5);
+      events.push({ t: 'regen', id: ship.id, at: { col: ship.col, row: ship.row } });
+    } else if (ship.race === 'dominion') {
+      if (ship.shields < ship.maxShields) {
+        ship.shields = Math.min(ship.maxShields, ship.shields + 5);
+        events.push({ t: 'regen', id: ship.id, at: { col: ship.col, row: ship.row } });
+      }
+    } else if (ship.race === 'federation') {
+      ship.ablative = true; // half damage this turn
+    }
   }
 
   // 2. Attacks. All damage is computed first, then applied simultaneously,
   // so no ship gets an ordering advantage.
   const damage = {};
-  const enemiesOf = (ship) => ships.filter((s) => s.alive && s.id !== ship.id);
+  const onSameTeam = (a, b) => state.teamPlay && a.race === b.race;
+  const enemiesOf = (ship) => ships.filter((s) => s.alive && s.id !== ship.id && !onSameTeam(ship, s));
 
   // Torpedo ray: straight path from the firer's START hex through the target
   // hex. Returns enemy ships (at END positions — where they are when the
@@ -160,10 +197,52 @@ export function resolveTurn(state, orders) {
     }
   }
 
-  // 3. Apply damage.
+  // 2b. Sentry guns: stationary, neutral. Each has a 33% chance per turn to
+  // fire a torpedo at the NEAREST alive ship within 6 hexes (deterministic
+  // ray — first ship on the path is hit). They're area hazards, not snipers.
+  for (const sentry of (state.sentries || [])) {
+    if (rng() >= 0.33) continue;
+    const targets = ships.filter((s) => s.alive);
+    if (!targets.length) break;
+    let targetShip = null, bestD = 6;
+    for (const t of targets) {
+      const d = hexDistance(sentry, t);
+      if (d <= bestD) { bestD = d; targetShip = t; }
+    }
+    if (!targetShip) continue;
+    const from = { col: sentry.col, row: sentry.row };
+    const target = { col: targetShip.col, row: targetShip.row };
+    const s = hexToPixel(from.col, from.row, 1);
+    const t = hexToPixel(target.col, target.row, 1);
+    const dx = t.x - s.x, dy = t.y - s.y;
+    const len = Math.hypot(dx, dy);
+    let victimId = null, victim = null;
+    if (len >= 0.01) {
+      const ux = dx / len, uy = dy / len;
+      let best = Infinity;
+      for (const other of targets) {
+        const p = hexToPixel(other.col, other.row, 1);
+        const rx = p.x - s.x, ry = p.y - s.y;
+        const along = rx * ux + ry * uy;
+        if (along < 0.3) continue;
+        if (Math.abs(rx * uy - ry * ux) < 0.8 && along < best) {
+          best = along; victim = other; victimId = other.id;
+        }
+      }
+    }
+    events.push({ t: 'torp', id: 'sentry-' + sentry.id, from: { ...from }, target: { ...target }, hit: !!victim, victimId });
+    if (victim) {
+      damage[victim.id] = (damage[victim.id] || 0) + 20;
+      events.push({ t: 'hit', id: victim.id, dmg: 20, via: 'torpedoes', by: 'sentry-' + sentry.id, at: { col: victim.col, row: victim.row } });
+    }
+  }
+
+  // 3. Apply damage. Cloaked Klingons take double; ablative Federation halves.
   for (const ship of ships) {
-    const dmg = damage[ship.id] || 0;
+    let dmg = damage[ship.id] || 0;
     if (dmg > 0) {
+      if (ship.cloaked) dmg *= 2;
+      if (ship.ablative) dmg = Math.ceil(dmg / 2);
       ship.shields -= dmg;
       if (ship.shields <= 0) {
         ship.shields = 0;
@@ -173,14 +252,18 @@ export function resolveTurn(state, orders) {
     }
   }
 
-  // 4. Win / lose.
-  const playerAlive = ships.some((s) => s.isPlayer && s.alive);
-  const enemyAlive = ships.some((s) => !s.isPlayer && s.alive);
+  // 4. Win / lose. In team play, races are teams; otherwise FFA.
+  // The game ends when the player's team is eliminated (loss) or all
+  // other teams/ships are eliminated (win).
+  const playerTeamAlive = ships.some((s) => s.isPlayer && s.alive) ||
+    (state.teamPlay && ships.some((s) => s.alive && s.race === ships.find((x) => x.isPlayer).race));
+  const othersAlive = ships.some((s) => s.alive && !s.isPlayer &&
+    !(state.teamPlay && s.race === ships.find((x) => x.isPlayer).race));
   let phase = 'orders';
   let winner = null;
-  if (!playerAlive || !enemyAlive) {
+  if (!playerTeamAlive || !othersAlive) {
     phase = 'gameover';
-    winner = playerAlive ? 'player' : 'enemy';
+    winner = playerTeamAlive ? 'player' : 'enemy';
   }
 
   return {

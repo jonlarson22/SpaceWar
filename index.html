@@ -33,8 +33,42 @@
       <button class="atk danger wrap" data-atk="selfdestruct">Self Destruct</button>
       <button id="end-turn" disabled>Commit Turn</button>
     </div>
+    <div id="special-row" class="hidden">
+      <button id="spec-transwarp">Transwarp</button>
+      <button id="spec-regen">Regen +5</button>
+    </div>
     <div id="hint-row"><span id="hint">Select destination</span><span id="auth-status">Connecting…</span></div>
   </footer>
+</div>
+<div id="setup-menu">
+  <h1>SPACE WAR</h1>
+  <p class="subtitle">New Game Setup</p>
+  <div class="setup-section">
+    <label class="text-label">Your Name<input id="setup-name" value="Jameson" maxlength="20"></label>
+    <label class="text-label">Ship Name<input id="setup-shipname" value="U.S.S. Reliant" maxlength="24"></label>
+  </div>
+  <div class="setup-section">
+    <div class="setup-label">Your Race</div>
+    <div id="setup-races" class="btn-row"></div>
+    <div id="race-desc" class="race-desc"></div>
+  </div>
+  <div class="setup-section">
+    <div class="setup-label">AI Opponents</div>
+    <div class="btn-row">
+      <button id="ai-minus" class="mini">−</button>
+      <span id="ai-count" class="count">1</span>
+      <button id="ai-plus" class="mini">+</button>
+    </div>
+    <div id="ai-races"></div>
+  </div>
+  <div class="setup-section">
+    <div class="setup-label">Sentry Guns <span class="dim">(dangerous — for experienced captains)</span></div>
+    <div id="setup-sentries" class="btn-row"></div>
+  </div>
+  <div class="setup-section">
+    <label class="check-label"><input type="checkbox" id="setup-teamplay"> Team Play <span class="dim">(ships of the same race are allies)</span></label>
+  </div>
+  <button id="launch">LAUNCH</button>
 </div>
 <div id="gameover" class="hidden">
   <div id="gameover-card">

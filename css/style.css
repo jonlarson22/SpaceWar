@@ -52,6 +52,56 @@ body {
   background: rgba(5, 8, 16, 0.75);
 }
 #gameover.hidden { display: none; }
+/* ---- special ability row (Borg) ---- */
+#special-row { display: flex; gap: 8px; margin-top: 8px; }
+#special-row.hidden { display: none; }
+#special-row button {
+  flex: 1; padding: 10px; font-size: 14px; font-weight: 600;
+  color: #dbe4f3; background: #3a2b5a; border: 1px solid #5a3a8a; border-radius: 8px;
+  cursor: pointer;
+}
+#special-row button.active { background: #5a3a8a; border-color: #9a6ad9; }
+/* ---- setup menu ---- */
+#setup-menu {
+  position: fixed; inset: 0; z-index: 20;
+  background: #0a0e1a; color: #dbe4f3;
+  overflow-y: auto; padding: 24px 20px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+}
+#setup-menu.hidden { display: none; }
+#setup-menu h1 { letter-spacing: 4px; font-size: 28px; margin-top: 12px; }
+#setup-menu .subtitle { color: #9fb3d9; margin-top: -12px; }
+.setup-section { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 8px; }
+.setup-label { font-weight: 600; font-size: 14px; color: #9fb3d9; }
+.text-label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.text-label input {
+  padding: 10px; font-size: 16px; color: #dbe4f3;
+  background: #1e2742; border: 1px solid #2a3458; border-radius: 8px;
+}
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-row button {
+  flex: 1; min-width: 60px; padding: 10px 6px; font-size: 13px; font-weight: 600;
+  color: #dbe4f3; background: #1e2742; border: 1px solid #2a3458; border-radius: 8px;
+  cursor: pointer;
+}
+.btn-row button.active { background: #2b4a7a; border-color: #4a90d9; }
+.btn-row button.mini { flex: 0 0 44px; font-size: 18px; }
+.count { display: flex; align-items: center; font-size: 18px; font-weight: 700; min-width: 30px; justify-content: center; }
+.race-desc { font-size: 13px; color: #9fb3d9; min-height: 34px; }
+#ai-races { display: flex; flex-direction: column; gap: 6px; }
+.ai-race-row { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.ai-race-row select {
+  flex: 1; padding: 8px; font-size: 14px; color: #dbe4f3;
+  background: #1e2742; border: 1px solid #2a3458; border-radius: 8px;
+}
+.check-label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.check-label input { width: 18px; height: 18px; }
+.check-label .dim { color: #9fb3d9; font-size: 12px; }
+#launch {
+  width: 100%; max-width: 380px; padding: 14px; font-size: 18px; font-weight: 700;
+  letter-spacing: 2px; color: #fff; background: #2e6b34;
+  border: 1px solid #4caf50; border-radius: 10px; cursor: pointer; margin-top: 8px;
+}
 #gameover-card {
   background: #141b2e; border: 1px solid #2a3458; border-radius: 12px;
   padding: 28px 36px; text-align: center;
