@@ -40,9 +40,9 @@ export function phaserDamage(ship, dist) {
 }
 
 // Torpedoes always do full damage on a hit, but they're slow and hard to
-// target: hit chance falls off steeply with range and target speed.
+// target: hit chance falls off STEEPLY with range. Long shots are gambles.
 export function torpedoHitChance(ship, dist, targetSpeed) {
-  return Math.min(0.95, Math.max(0.05, 0.95 - 0.09 * dist - 0.05 * targetSpeed));
+  return Math.min(0.95, Math.max(0.05, 0.95 - 0.12 * dist - 0.05 * targetSpeed));
 }
 
 export function resolveTurn(state, orders) {
