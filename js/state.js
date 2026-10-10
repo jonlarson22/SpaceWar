@@ -84,6 +84,7 @@ export function newGame(setup = {}) {
     rngSeed: (Math.random() * 0xffffffff) >>> 0,
     ships,
     sentries: sentryList,
+    torps: [], // in-flight torpedoes: {id, x, y, dx, dy, ownerId, ownerRace, damage}
     log: [],
   };
 }

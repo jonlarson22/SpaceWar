@@ -1,7 +1,7 @@
 // Turn engine: pure function, no UI. resolveTurn(state, orders) -> { state, events }.
 // Seeded RNG (mulberry32) keeps resolution deterministic — same seed + same
 // orders = same outcome, which is what future Firebase multiplayer needs.
-import { hexDistance, hexLine, hexToPixel, inBounds, neighbors, ROWS, COLS } from './hex.js';
+import { hexDistance, hexLine, hexToPixel, pixelToHex, inBounds, neighbors, ROWS, COLS } from './hex.js';
 
 export function makeRng(seed) {
   let a = seed >>> 0;
@@ -116,29 +116,7 @@ export function resolveTurn(state, orders) {
   const onSameTeam = (a, b) => state.teamPlay && a.race === b.race;
   const enemiesOf = (ship) => ships.filter((s) => s.alive && s.id !== ship.id && !onSameTeam(ship, s));
 
-  // Torpedo ray: straight path from the firer's START hex through the target
-  // hex. Returns enemy ships (at END positions — where they are when the
-  // torpedo arrives) near the ray, nearest first. A miss just keeps flying off.
-  function torpedoVictims(ship, start, target) {
-    const s = hexToPixel(start.col, start.row, 1);
-    const t = hexToPixel(target.col, target.row, 1);
-    const dx = t.x - s.x, dy = t.y - s.y;
-    const len = Math.hypot(dx, dy);
-    if (len < 0.01) return [];
-    const ux = dx / len, uy = dy / len;
-    const found = [];
-    for (const other of enemiesOf(ship)) {
-      const p = hexToPixel(other.col, other.row, 1);
-      const rx = p.x - s.x, ry = p.y - s.y;
-      const along = rx * ux + ry * uy;
-      if (along < 0.3) continue; // behind the firer
-      const perp = Math.abs(rx * uy - ry * ux);
-      if (perp < 0.8) found.push({ ship: other, along });
-    }
-    found.sort((a, b) => a.along - b.along);
-    return found;
-  }
-
+  // Torpedo interception: the ray (from the firer's START hex through the
   for (const ship of ships) {
     if (!ship.alive) continue;
     const o = orders[ship.id];
@@ -180,26 +158,67 @@ export function resolveTurn(state, orders) {
         }
       }
     } else {
-      // Torpedoes launch IMMEDIATELY from the start hex along a straight ray.
-      // Deterministic: the FIRST enemy ship on the ray is hit for full damage.
-      // There is no die roll — if you correctly predict where they'll be, you
-      // hit. Dodging means not being on the ray. A clean miss flies off.
-      const victims = torpedoVictims(ship, start, target);
-      const found = victims[0];
-      if (found) {
-        const victim = found.ship;
-        damage[victim.id] = (damage[victim.id] || 0) + ship.torpedoes;
-        events.push({ t: 'torp', id: ship.id, from: { ...start }, target: { ...target }, hit: true, victimId: victim.id });
-        events.push({ t: 'hit', id: victim.id, dmg: ship.torpedoes, via: 'torpedoes', by: ship.id, at: { col: victim.col, row: victim.row } });
-      } else {
-        events.push({ t: 'torp', id: ship.id, from: { ...start }, target: { ...target }, hit: false, victimId: null });
+      // Torpedoes are PERSISTENT projectiles. Launched from the start hex,
+      // they travel at constant speed along the ray through the target hex.
+      // Each turn they move; if a torpedo enters a hex containing an enemy
+      // ship, it hits for full damage. Otherwise it keeps flying until it
+      // leaves the board. It's about timing, not prediction.
+      const s = hexToPixel(start.col, start.row, 1);
+      const t = hexToPixel(target.col, target.row, 1);
+      const dx = t.x - s.x, dy = t.y - s.y;
+      const len = Math.hypot(dx, dy);
+      if (len >= 0.01) {
+        const torp = {
+          id: `torp-${state.turn}-${ship.id}`,
+          x: s.x, y: s.y,
+          dx: dx / len, dy: dy / len,
+          ownerId: ship.id,
+          ownerRace: ship.race,
+          damage: ship.torpedoes,
+        };
+        state.torps.push(torp);
+        events.push({ t: 'torp_launch', id: ship.id, from: { ...start }, torpId: torp.id });
       }
     }
   }
 
-  // 2b. Sentry guns: stationary, neutral. Each has a 33% chance per turn to
-  // fire a torpedo at the NEAREST alive ship within 6 hexes (deterministic
-  // ray — first ship on the path is hit). They're area hazards, not snipers.
+  // 2b. Move torpedoes and check collisions. Torps travel at TORP_SPEED
+  // (hex-pixel units per turn). Sub-stepped so fast torps don't skip hexes.
+  // If a torp enters a ship's hex, it hits.
+  const TORP_SPEED = 4.0;
+  const torpsToRemove = new Set();
+  for (const torp of state.torps) {
+    if (torpsToRemove.has(torp.id)) continue;
+    const steps = Math.ceil(TORP_SPEED / 0.5);
+    for (let s = 0; s < steps; s++) {
+      torp.x += (torp.dx * TORP_SPEED) / steps;
+      torp.y += (torp.dy * TORP_SPEED) / steps;
+      const hex = pixelToHex(torp.x, torp.y, 1);
+      if (!hex || !inBounds(hex.col, hex.row)) {
+        torpsToRemove.add(torp.id); // flew offscreen
+        break;
+      }
+      // Collision: enemy ship (not owner, not teammate) in this hex.
+      let hit = false;
+      for (const ship of ships) {
+        if (!ship.alive || ship.id === torp.ownerId) continue;
+        if (state.teamPlay && ship.race === torp.ownerRace) continue;
+        if (ship.col === hex.col && ship.row === hex.row) {
+          damage[ship.id] = (damage[ship.id] || 0) + torp.damage;
+          events.push({ t: 'hit', id: ship.id, dmg: torp.damage, via: 'torpedoes', by: torp.ownerId, at: { col: hex.col, row: hex.row } });
+          events.push({ t: 'torp_hit', torpId: torp.id, at: { col: hex.col, row: hex.row } });
+          torpsToRemove.add(torp.id);
+          hit = true;
+          break;
+        }
+      }
+      if (hit) break;
+    }
+  }
+  state.torps = state.torps.filter((t) => !torpsToRemove.has(t.id));
+
+  // 2c. Sentry guns: stationary, neutral. Each has a 33% chance per turn to
+  // launch a torpedo at the NEAREST alive ship within 6 hexes.
   for (const sentry of (state.sentries || [])) {
     if (rng() >= 0.33) continue;
     const targets = ships.filter((s) => s.alive);
@@ -210,30 +229,21 @@ export function resolveTurn(state, orders) {
       if (d <= bestD) { bestD = d; targetShip = t; }
     }
     if (!targetShip) continue;
-    const from = { col: sentry.col, row: sentry.row };
-    const target = { col: targetShip.col, row: targetShip.row };
-    const s = hexToPixel(from.col, from.row, 1);
-    const t = hexToPixel(target.col, target.row, 1);
+    const s = hexToPixel(sentry.col, sentry.row, 1);
+    const t = hexToPixel(targetShip.col, targetShip.row, 1);
     const dx = t.x - s.x, dy = t.y - s.y;
     const len = Math.hypot(dx, dy);
-    let victimId = null, victim = null;
     if (len >= 0.01) {
-      const ux = dx / len, uy = dy / len;
-      let best = Infinity;
-      for (const other of targets) {
-        const p = hexToPixel(other.col, other.row, 1);
-        const rx = p.x - s.x, ry = p.y - s.y;
-        const along = rx * ux + ry * uy;
-        if (along < 0.3) continue;
-        if (Math.abs(rx * uy - ry * ux) < 0.8 && along < best) {
-          best = along; victim = other; victimId = other.id;
-        }
-      }
-    }
-    events.push({ t: 'torp', id: 'sentry-' + sentry.id, from: { ...from }, target: { ...target }, hit: !!victim, victimId });
-    if (victim) {
-      damage[victim.id] = (damage[victim.id] || 0) + 20;
-      events.push({ t: 'hit', id: victim.id, dmg: 20, via: 'torpedoes', by: 'sentry-' + sentry.id, at: { col: victim.col, row: victim.row } });
+      const torp = {
+        id: `torp-${state.turn}-sentry-${sentry.id}`,
+        x: s.x, y: s.y,
+        dx: dx / len, dy: dy / len,
+        ownerId: 'sentry-' + sentry.id,
+        ownerRace: null, // hits everyone
+        damage: 20,
+      };
+      state.torps.push(torp);
+      events.push({ t: 'torp_launch', id: 'sentry-' + sentry.id, from: { col: sentry.col, row: sentry.row }, torpId: torp.id });
     }
   }
 

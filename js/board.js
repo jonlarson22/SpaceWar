@@ -177,6 +177,16 @@ export class Board {
   }
 
   drawShips(ctx, state) {
+    // In-flight torpedoes: small orange dots. Torp x/y are in size=1
+    // hex-pixel units; convert via toScreen math.
+    for (const torp of (state.torps || [])) {
+      const sx = torp.x * this.size + this.originX + (this.size * Math.sqrt(3)) / 2;
+      const sy = torp.y * this.size + this.originY + this.size;
+      ctx.fillStyle = '#ffd75e';
+      ctx.beginPath(); ctx.arc(sx, sy, 4, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(255, 150, 50, 0.5)';
+      ctx.beginPath(); ctx.arc(sx, sy, 7, 0, 7); ctx.fill();
+    }
     // Sentry guns: orange diamonds, always visible.
     for (const sentry of (state.sentries || [])) {
       const s = this.toScreen(sentry.col, sentry.row);

@@ -58,11 +58,12 @@ export function aiOrders(state, ship, rng) {
   const special = aiSpecial(state, ship, rng, foe, { moveTo, launchDist });
   if (special) return special;
 
-  // Torpedoes: deterministic, first ship on the ray is hit. Best close.
-  // Phasers sweep a field, better when unsure at range.
-  if (launchDist > 8) return { moveTo, attack: 'none', target: null, special: null };
-  if (launchDist <= 5) {
-    return { moveTo, attack: 'torpedoes', target, special: null };
+  // Torpedoes are persistent: they travel for multiple turns. Aim at the
+  // foe's CURRENT hex; the torp will get there in 1-3 turns. Fire when in
+  // range (the torp needs time to travel).
+  if (launchDist > 10) return { moveTo, attack: 'none', target: null, special: null };
+  if (launchDist <= 8) {
+    return { moveTo, attack: 'torpedoes', target: { col: foe.col, row: foe.row }, special: null };
   }
   return { moveTo, attack: 'phasers', target, special: null };
 }
