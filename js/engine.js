@@ -1,7 +1,7 @@
 // Turn engine: pure function, no UI. resolveTurn(state, orders) -> { state, events }.
 // Seeded RNG (mulberry32) keeps resolution deterministic — same seed + same
 // orders = same outcome, which is what future Firebase multiplayer needs.
-import { hexDistance, hexLine, hexToPixel, pixelToHex, inBounds, neighbors, ROWS, COLS } from './hex.js';
+import { hexDistance, hexToPixel, pixelToHex, inBounds, ROWS, COLS } from './hex.js';
 
 export function makeRng(seed) {
   let a = seed >>> 0;
@@ -30,15 +30,6 @@ export function validDestinations(ship, accelBonus = 0) {
     }
   }
   return out;
-}
-
-// Phasers sweep while the firing ship moves: stationary = sustained full hit,
-// faster = wider sweep = less dwell time on target. Damage also falls off
-// with range.
-export function phaserDamage(ship, dist) {
-  const sweep = 1 / (1 + 0.25 * ship.speed);
-  const range = Math.max(0.2, 1 - 0.09 * dist);
-  return Math.max(1, Math.round(ship.phasers * sweep * range));
 }
 
 // Torpedoes always do full damage on a hit, but they're slow and hard to
@@ -138,23 +129,42 @@ export function resolveTurn(state, orders) {
     const target = o && o.target;
     if (!target || !inBounds(target.col, target.row)) continue;
 
-    if (atk === 'phasers') {
-      // The beam fires CONTINUOUSLY while the ship moves, sweeping from the
-      // start hex to the target and from the end hex to the target. Ships in
-      // hexes along the sweep take damage: full at the target hex, half
-      // along the way (a grazing pass, not a sustained hit).
+    if (atk === 'phasers' && target) {
+      // Dwell-time model: the beam fires CONTINUOUSLY while ships move. For
+      // each enemy, compute the fraction of the turn it spends inside the
+      // beam (from the firer's live position to the target hex). Damage =
+      // phaser power × dwell fraction. A stationary target at the aim point
+      // takes full damage; a fast mover clipping the edge takes little.
       events.push({ t: 'beam', id: ship.id, to: { ...target } });
-      const swept = new Map();
-      for (const h of [...hexLine(start, target), ...hexLine(here, target), ...neighbors(target.col, target.row)]) {
-        swept.set(h.col + ',' + h.row, h);
-      }
-      const full = phaserDamage(ship, hexDistance(here, target));
-      for (const h of swept.values()) {
-        const isTarget = h.col === target.col && h.row === target.row;
-        const hexDmg = isTarget ? full : Math.max(1, Math.round(full / 2));
-        for (const v of enemiesOf(ship).filter((s) => s.col === h.col && s.row === h.row)) {
-          damage[v.id] = (damage[v.id] || 0) + hexDmg;
-          events.push({ t: 'hit', id: v.id, dmg: hexDmg, via: 'phasers', by: ship.id, at: { col: v.col, row: v.row } });
+      const tgtPx = hexToPixel(target.col, target.row, 1);
+      const f0 = hexToPixel(start.col, start.row, 1);
+      const f1 = hexToPixel(ship.col, ship.row, 1); // firer end (already moved)
+      for (const enemy of enemiesOf(ship)) {
+        const est = starts[enemy.id];
+        const e0 = hexToPixel(est.col, est.row, 1);
+        const e1 = hexToPixel(enemy.col, enemy.row, 1);
+        const STEPS = 12;
+        let inside = 0;
+        for (let i = 0; i <= STEPS; i++) {
+          const f = i / STEPS;
+          const fx = f0.x + (f1.x - f0.x) * f;
+          const fy = f0.y + (f1.y - f0.y) * f;
+          const ex = e0.x + (e1.x - e0.x) * f;
+          const ey = e0.y + (e1.y - e0.y) * f;
+          // Distance from enemy to beam segment (firer → target).
+          const dx = tgtPx.x - fx, dy = tgtPx.y - fy;
+          const l2 = dx * dx + dy * dy || 1;
+          let t = ((ex - fx) * dx + (ey - fy) * dy) / l2;
+          t = Math.max(0, Math.min(1, t));
+          const px = fx + dx * t, py = fy + dy * t;
+          if (Math.hypot(ex - px, ey - py) < 0.8) inside++;
+        }
+        const dwell = inside / (STEPS + 1);
+        if (dwell > 0) {
+          const dmg = Math.max(1, Math.round(ship.phasers * dwell));
+          damage[enemy.id] = (damage[enemy.id] || 0) + dmg;
+          // Hit position: where the enemy was mid-turn (use end hex for simplicity).
+          events.push({ t: 'hit', id: enemy.id, dmg, via: 'phasers', by: ship.id, at: { col: enemy.col, row: enemy.row } });
         }
       }
     } else {

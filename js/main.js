@@ -241,21 +241,30 @@ async function animateEvents(result) {
     .filter((x) => x.t === 'hit' && x.via === 'phasers')
     .map((h) => ({ ...h, shown: false }));
 
-  // Torps: animate from old positions to new. Launches flash; hits explode live.
+  // Torps: animate from old positions to new. Use launch events for accurate
+  // start positions (new torps). Hits explode at impact.
   const oldTorps = new Map((state.torps || []).map((t) => [t.id, t]));
+  const launchFrom = new Map(events.filter((x) => x.t === 'torp_launch').map((e) => [e.torpId, e.from]));
   const torpAnims = [];
   for (const t of (newState.torps || [])) {
     const old = oldTorps.get(t.id);
-    const a = old ? torpToScreen(old.x, old.y) : torpToScreen(t.x - t.dx * 4, t.y - t.dy * 4);
+    const launch = launchFrom.get(t.id);
+    const a = old ? torpToScreen(old.x, old.y)
+      : launch ? board.toScreen(launch.col, launch.row)
+      : torpToScreen(t.x, t.y);
     const b = torpToScreen(t.x, t.y);
+    // Skip if not moving (shouldn't happen, but safe).
+    if (Math.hypot(b.x - a.x, b.y - a.y) < 2) continue;
     torpAnims.push({ id: t.id, a, b, done: false, fx: null });
   }
-  // Hits: torps that were removed. Animate to impact and explode.
   const torpHits = events.filter((x) => x.t === 'torp_hit');
   for (const e of torpHits) {
     const old = oldTorps.get(e.torpId);
-    if (!old) continue;
-    const a = torpToScreen(old.x, old.y);
+    const launch = launchFrom.get(e.torpId);
+    const a = old ? torpToScreen(old.x, old.y)
+      : launch ? board.toScreen(launch.col, launch.row)
+      : null;
+    if (!a) continue;
     const b = board.toScreen(e.at.col, e.at.row);
     torpAnims.push({ id: e.torpId, a, b, done: false, fx: null, hitEv: e });
   }
@@ -263,10 +272,7 @@ async function animateEvents(result) {
     board.addFx({ kind: 'torp', x1: ta.a.x, y1: ta.a.y, x2: ta.a.x, y2: ta.a.y, life: 99999 });
     ta.fx = board.fx[board.fx.length - 1];
   }
-  for (const e of events.filter((x) => x.t === 'torp_launch')) {
-    const s = board.toScreen(e.from.col, e.from.row);
-    board.addFx({ kind: 'blast', x: s.x, y: s.y, maxR: board.size * 0.7, life: 300 });
-  }
+  // No muzzle flash — the torp dot appearing is enough (a blast looks like damage).
 
   await frames(1100, (k) => {
     const ez = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
