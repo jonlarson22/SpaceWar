@@ -200,6 +200,9 @@ export class Board {
     }
     for (const ship of state.ships) {
       if (!ship.alive && !this.doomed.has(ship.id)) continue;
+      // Defensive: skip ships with invalid positions (should never happen).
+      if (!Number.isFinite(ship.col) || !Number.isFinite(ship.row)) continue;
+      if (ship.col < 0 || ship.col >= 14 || ship.row < 0 || ship.row >= 11) continue;
       // Cloaked enemy ships are invisible. Your own cloaked ship shows faint.
       if (ship.cloaked && !ship.isPlayer) continue;
       const override = this.shipScreenPos[ship.id];
