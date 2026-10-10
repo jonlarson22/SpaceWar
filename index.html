@@ -26,8 +26,22 @@
     <div id="hex-info"></div>
   </main>
   <footer id="actionbar">
-    <span id="auth-status">Connecting…</span>
+    <div id="atk-row">
+      <button class="atk" data-atk="phasers">Phasers</button>
+      <button class="atk" data-atk="torpedoes">Torps</button>
+      <button class="atk active" data-atk="none">Hold</button>
+      <button class="atk danger" data-atk="selfdestruct" title="Self destruct">💥</button>
+      <button id="end-turn" disabled>End Turn</button>
+    </div>
+    <div id="hint-row"><span id="hint">Select destination</span><span id="auth-status">Connecting…</span></div>
   </footer>
+</div>
+<div id="gameover" class="hidden">
+  <div id="gameover-card">
+    <h2 id="gameover-title">Victory!</h2>
+    <p id="gameover-sub"></p>
+    <button id="new-game">New Game</button>
+  </div>
 </div>
 <script type="module" src="js/main.js"></script>
 </body>

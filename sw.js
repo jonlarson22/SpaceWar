@@ -1,6 +1,6 @@
 // Space War service worker. Bump CACHE_VERSION on every static-asset change
 // or phones will keep serving stale files indefinitely.
-const CACHE_VERSION = 'spacewar-v1';
+const CACHE_VERSION = 'spacewar-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -12,6 +12,8 @@ const ASSETS = [
   './js/sprites.js',
   './js/board.js',
   './js/state.js',
+  './js/engine.js',
+  './js/ai.js',
   './assets/icons/icon-192.png',
   './assets/icons/icon-512.png',
   './assets/icons/apple-touch-icon.png',

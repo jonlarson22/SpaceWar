@@ -10,6 +10,10 @@ export class Board {
     this.originX = 0;        // pixel offset of grid origin
     this.originY = 0;
     this.selected = null;    // {col, row} highlighted hex
+    this.moveOptions = [];   // valid destination hexes to highlight
+    this.targetHex = null;   // attack target hex highlight
+    this.shipScreenPos = {}; // shipId -> {x, y} override (for animations)
+    this.fx = [];            // active effects: {kind, ...}
     this.resize();
   }
 
@@ -59,8 +63,74 @@ export class Board {
     ctx.fillRect(0, 0, this.w, this.h);
     this.drawStars(ctx);
     this.drawGrid(ctx);
+    this.drawMoveOptions(ctx);
     if (state) this.drawShips(ctx, state);
     if (this.selected) this.drawSelection(ctx);
+    if (this.targetHex) this.drawTarget(ctx);
+    this.drawFx(ctx);
+  }
+
+  drawMoveOptions(ctx) {
+    if (!this.moveOptions.length) return;
+    for (const { col, row } of this.moveOptions) {
+      const s = this.toScreen(col, row);
+      const corners = hexCorners(s.x, s.y, this.size * 0.96);
+      ctx.beginPath();
+      corners.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(80, 200, 120, 0.18)';
+      ctx.fill();
+    }
+  }
+
+  drawTarget(ctx) {
+    const { col, row } = this.targetHex;
+    if (!inBounds(col, row)) return;
+    const s = this.toScreen(col, row);
+    const corners = hexCorners(s.x, s.y, this.size * 0.96);
+    ctx.beginPath();
+    corners.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(220, 60, 60, 0.3)';
+    ctx.fill();
+    ctx.strokeStyle = '#ff5e5e';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // --- animation support ---
+  setShipScreenPos(id, x, y) { this.shipScreenPos[id] = { x, y }; }
+  clearShipScreenPos() { this.shipScreenPos = {}; }
+  addFx(fx) { this.fx.push({ born: performance.now(), ...fx }); }
+  clearFx() { this.fx = []; }
+
+  drawFx(ctx) {
+    const now = performance.now();
+    this.fx = this.fx.filter((f) => now - f.born < f.life);
+    for (const f of this.fx) {
+      const k = (now - f.born) / f.life; // 0..1
+      if (f.kind === 'beam') {
+        ctx.strokeStyle = `rgba(120, 220, 255, ${1 - k * 0.7})`;
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(f.x1, f.y1); ctx.lineTo(f.x2, f.y2); ctx.stroke();
+        ctx.strokeStyle = `rgba(255, 255, 255, ${1 - k})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(f.x1, f.y1); ctx.lineTo(f.x2, f.y2); ctx.stroke();
+      } else if (f.kind === 'torp') {
+        const x = f.x1 + (f.x2 - f.x1) * k;
+        const y = f.y1 + (f.y2 - f.y1) * k;
+        ctx.fillStyle = '#ffd75e';
+        ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill();
+        ctx.fillStyle = `rgba(255, 150, 50, ${0.5 * (1 - k)})`;
+        ctx.beginPath(); ctx.arc(x, y, 8, 0, 7); ctx.fill();
+      } else if (f.kind === 'blast') {
+        const r = f.maxR * (0.3 + 0.7 * k);
+        ctx.fillStyle = `rgba(255, ${Math.round(150 - 100 * k)}, 50, ${0.8 * (1 - k)})`;
+        ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 7); ctx.fill();
+        ctx.fillStyle = `rgba(255, 240, 200, ${0.9 * (1 - k)})`;
+        ctx.beginPath(); ctx.arc(f.x, f.y, r * 0.5, 0, 7); ctx.fill();
+      }
+    }
   }
 
   drawStars(ctx) {
@@ -95,7 +165,8 @@ export class Board {
   drawShips(ctx, state) {
     for (const ship of state.ships) {
       if (!ship.alive) continue;
-      const s = this.toScreen(ship.col, ship.row);
+      const override = this.shipScreenPos[ship.id];
+      const s = override || this.toScreen(ship.col, ship.row);
       const img = spriteFor(ship.race);
       const dim = this.size * 1.5;
       if (img) {

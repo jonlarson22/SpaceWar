@@ -26,8 +26,39 @@ body {
   pointer-events: none; min-width: 120px;
 }
 #actionbar {
-  display: flex; justify-content: center; align-items: center;
+  display: flex; flex-direction: column; gap: 6px;
   padding: 8px 12px calc(env(safe-area-inset-bottom, 0px) + 8px);
   background: #141b2e; border-top: 1px solid #2a3458;
+}
+#atk-row { display: flex; gap: 8px; justify-content: center; }
+#atk-row button {
+  flex: 1; max-width: 110px;
+  padding: 10px 4px; font-size: 14px; font-weight: 600;
+  color: #dbe4f3; background: #1e2742; border: 1px solid #2a3458; border-radius: 8px;
+  cursor: pointer;
+}
+#atk-row button.active { background: #2b4a7a; border-color: #4a90d9; }
+#atk-row button.danger.active { background: #7a2b2b; border-color: #d94a4a; }
+#end-turn { background: #2e6b34 !important; border-color: #4caf50 !important; }
+#end-turn:disabled { opacity: 0.35; }
+#hint-row {
+  display: flex; justify-content: space-between; align-items: center;
   font-size: 13px; color: #9fb3d9;
+}
+#gameover {
+  position: fixed; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(5, 8, 16, 0.75);
+}
+#gameover.hidden { display: none; }
+#gameover-card {
+  background: #141b2e; border: 1px solid #2a3458; border-radius: 12px;
+  padding: 28px 36px; text-align: center;
+}
+#gameover-card h2 { margin-bottom: 8px; letter-spacing: 1px; }
+#gameover-card p { color: #9fb3d9; margin-bottom: 18px; }
+#new-game {
+  padding: 12px 28px; font-size: 16px; font-weight: 600;
+  color: #fff; background: #2e6b34; border: 1px solid #4caf50; border-radius: 8px;
+  cursor: pointer;
 }

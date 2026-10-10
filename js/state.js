@@ -4,7 +4,7 @@
 import { ROWS, COLS } from './hex.js';
 
 export const RACE_STATS = {
-  federation: { shields: 100, phasers: 50, torpedoes: 60, engine: 4 },
+  federation: { shields: 100, phasers: 55, torpedoes: 60, engine: 4 },
   klingon:    { shields: 90,  phasers: 60, torpedoes: 60, engine: 4 },
   borg:       { shields: 120, phasers: 50, torpedoes: 50, engine: 3 },
   dominion:   { shields: 100, phasers: 50, torpedoes: 60, engine: 4 },
@@ -37,6 +37,7 @@ export function newGame(playerName = 'Jameson') {
     turn: 1,
     phase: 'orders', // orders -> resolved -> orders ... -> gameover
     winner: null,
+    rngSeed: (Math.random() * 0xffffffff) >>> 0,
     ships: [
       makeShip({ race: 'federation', name: 'U.S.S. Reliant', captain: playerName, col: 2, row: 6, isPlayer: true }),
       makeShip({ race: 'klingon', name: 'I.K.S. Rotarran', captain: 'Azetbur', col: 8, row: 6, isPlayer: false }),
