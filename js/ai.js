@@ -2,7 +2,7 @@
 // varies its targeting, so it can't be mirrored into a deterministic dance
 // and the player can't perfectly predict it either.
 import { hexDistance } from './hex.js';
-import { validDestinations, torpedoHitChance } from './engine.js';
+import { validDestinations } from './engine.js';
 
 export function aiOrders(state, ship, rng) {
   const enemies = state.ships.filter((s) => s.alive && s.id !== ship.id);
@@ -44,12 +44,11 @@ export function aiOrders(state, ship, rng) {
     : predicted;
 
   // Torpedoes fly a straight ray from our START hex through the target —
-  // deadly up close, wild at range. Aim at the predicted destination (where
-  // the foe will be when the torpedo arrives). Phasers sweep during movement.
+  // deterministic: first ship on the ray is hit. Best when we can predict
+  // well (close range). Phasers sweep a field, better when unsure at range.
   const launchDist = hexDistance({ col: ship.col, row: ship.row }, target);
   if (launchDist > 8) return { moveTo, attack: 'none', target: null };
-  const p = torpedoHitChance(ship, launchDist, foe.speed);
-  if (launchDist <= 4 && p > 0.25) {
+  if (launchDist <= 5) {
     return { moveTo, attack: 'torpedoes', target };
   }
   return { moveTo, attack: 'phasers', target };

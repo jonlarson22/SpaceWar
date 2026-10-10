@@ -172,12 +172,8 @@ async function animateEvents(result) {
         text: '-' + (hitEv ? hitEv.dmg : ''), color: '#ff9e5e', life: 1100,
       });
       await frames(450, () => {});
-    } else if (e.victimId) {
-      // Had a target on the ray but dodged it: clear MISS feedback.
-      board.addFx({ kind: 'dmgnum', x: tx, y: ty - 12, text: 'MISS', color: '#9fb3d9', life: 900 });
-      await frames(350, () => {});
     }
-    // else: clean miss, torp just flies off — no text needed.
+    // else: clean miss — torp flies offscreen, no text needed.
   }
 
   // Phase 2: ships glide. Phaser beams fire continuously, sweeping from each

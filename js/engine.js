@@ -144,20 +144,16 @@ export function resolveTurn(state, orders) {
       }
     } else {
       // Torpedoes launch IMMEDIATELY from the start hex along a straight ray.
-      // First enemy ship on the ray (at its end position, where it is when
-      // the torpedo arrives) takes the hit roll; a miss flies off.
+      // Deterministic: the FIRST enemy ship on the ray is hit for full damage.
+      // There is no die roll — if you correctly predict where they'll be, you
+      // hit. Dodging means not being on the ray. A clean miss flies off.
       const victims = torpedoVictims(ship, start, target);
       const found = victims[0];
       if (found) {
         const victim = found.ship;
-        const dist = hexDistance(start, victim);
-        const p = torpedoHitChance(ship, dist, victim.speed);
-        const hit = rng() < p;
-        events.push({ t: 'torp', id: ship.id, from: { ...start }, target: { ...target }, hit, victimId: victim.id });
-        if (hit) {
-          damage[victim.id] = (damage[victim.id] || 0) + ship.torpedoes;
-          events.push({ t: 'hit', id: victim.id, dmg: ship.torpedoes, via: 'torpedoes', by: ship.id, at: { col: victim.col, row: victim.row } });
-        }
+        damage[victim.id] = (damage[victim.id] || 0) + ship.torpedoes;
+        events.push({ t: 'torp', id: ship.id, from: { ...start }, target: { ...target }, hit: true, victimId: victim.id });
+        events.push({ t: 'hit', id: victim.id, dmg: ship.torpedoes, via: 'torpedoes', by: ship.id, at: { col: victim.col, row: victim.row } });
       } else {
         events.push({ t: 'torp', id: ship.id, from: { ...start }, target: { ...target }, hit: false, victimId: null });
       }
