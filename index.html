@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Space War</title>
+<meta name="theme-color" content="#0a0e1a">
+<meta name="description" content="Turn-based hex-grid space combat. A remake of the 2001 Palm OS classic.">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
+<!-- iOS PWA -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Space War">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <header id="statusbar">
+    <span id="game-title">Space War</span>
+    <span id="player-status"><span id="hud-shields">Shld: --</span> <span id="hud-speed">Spd: --</span></span>
+  </header>
+  <main id="board-wrap">
+    <canvas id="board"></canvas>
+    <div id="hex-info"></div>
+  </main>
+  <footer id="actionbar">
+    <span id="auth-status">Connecting…</span>
+  </footer>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
