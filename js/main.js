@@ -496,6 +496,7 @@ function startTurn() {
   pending = { moveTo: null, attack: 'none', target: null, special: null };
   board.clearFx();
   board.doomed.clear();
+  board.clearShipScreenPos();
   board.resize(); // ensure correct sizing now that setup menu is hidden
   refreshMoveOptions();
   setAttackUI('none');
