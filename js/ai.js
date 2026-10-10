@@ -44,10 +44,13 @@ export function aiOrders(state, ship, rng) {
     : predicted;
 
   // Torpedoes fly a straight ray from our START hex through the target —
-  // deadly up close, wild at range. Phasers sweep and are reliable farther out.
+  // deadly up close, wild at range. Aim at the predicted destination (where
+  // the foe will be when the torpedo arrives). Phasers sweep during movement.
   const launchDist = hexDistance({ col: ship.col, row: ship.row }, target);
   if (launchDist > 8) return { moveTo, attack: 'none', target: null };
   const p = torpedoHitChance(ship, launchDist, foe.speed);
-  const attack = launchDist <= 4 && p > 0.25 ? 'torpedoes' : 'phasers';
-  return { moveTo, attack, target };
+  if (launchDist <= 4 && p > 0.25) {
+    return { moveTo, attack: 'torpedoes', target };
+  }
+  return { moveTo, attack: 'phasers', target };
 }

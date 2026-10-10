@@ -58,7 +58,7 @@ export function resolveTurn(state, orders) {
     if (!ship.alive) continue;
     const o = orders[ship.id];
     const from = { col: ship.col, row: ship.row };
-    starts[ship.id] = { ...from };
+    starts[ship.id] = { col: from.col, row: from.row, speed: ship.speed };
     let dest = { ...from };
     if (o && o.moveTo && inBounds(o.moveTo.col, o.moveTo.row)) {
       const d = hexDistance(from, o.moveTo);
@@ -80,8 +80,8 @@ export function resolveTurn(state, orders) {
   const enemiesOf = (ship) => ships.filter((s) => s.alive && s.id !== ship.id);
 
   // Torpedo ray: straight path from the firer's START hex through the target
-  // hex. Returns enemy ships (at end positions) near the ray, nearest first.
-  // A miss just keeps flying off.
+  // hex. Returns enemy ships (at END positions — where they are when the
+  // torpedo arrives) near the ray, nearest first. A miss just keeps flying off.
   function torpedoVictims(ship, start, target) {
     const s = hexToPixel(start.col, start.row, 1);
     const t = hexToPixel(target.col, target.row, 1);
@@ -99,7 +99,7 @@ export function resolveTurn(state, orders) {
       if (perp < 0.8) found.push({ ship: other, along });
     }
     found.sort((a, b) => a.along - b.along);
-    return found.map((f) => f.ship);
+    return found;
   }
 
   for (const ship of ships) {
@@ -139,22 +139,24 @@ export function resolveTurn(state, orders) {
         const hexDmg = isTarget ? full : Math.max(1, Math.round(full / 2));
         for (const v of enemiesOf(ship).filter((s) => s.col === h.col && s.row === h.row)) {
           damage[v.id] = (damage[v.id] || 0) + hexDmg;
-          events.push({ t: 'hit', id: v.id, dmg: hexDmg, via: 'phasers', at: { col: v.col, row: v.row } });
+          events.push({ t: 'hit', id: v.id, dmg: hexDmg, via: 'phasers', by: ship.id, at: { col: v.col, row: v.row } });
         }
       }
     } else {
       // Torpedoes launch IMMEDIATELY from the start hex along a straight ray.
-      // First enemy ship on the ray takes the hit roll; a miss flies off.
+      // First enemy ship on the ray (at its end position, where it is when
+      // the torpedo arrives) takes the hit roll; a miss flies off.
       const victims = torpedoVictims(ship, start, target);
-      const victim = victims[0];
-      if (victim) {
+      const found = victims[0];
+      if (found) {
+        const victim = found.ship;
         const dist = hexDistance(start, victim);
         const p = torpedoHitChance(ship, dist, victim.speed);
         const hit = rng() < p;
         events.push({ t: 'torp', id: ship.id, from: { ...start }, target: { ...target }, hit, victimId: victim.id });
         if (hit) {
           damage[victim.id] = (damage[victim.id] || 0) + ship.torpedoes;
-          events.push({ t: 'hit', id: victim.id, dmg: ship.torpedoes, via: 'torpedoes', at: { col: victim.col, row: victim.row } });
+          events.push({ t: 'hit', id: victim.id, dmg: ship.torpedoes, via: 'torpedoes', by: ship.id, at: { col: victim.col, row: victim.row } });
         }
       } else {
         events.push({ t: 'torp', id: ship.id, from: { ...start }, target: { ...target }, hit: false, victimId: null });

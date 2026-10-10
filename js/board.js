@@ -132,6 +132,17 @@ export class Board {
         ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, 7); ctx.fill();
         ctx.fillStyle = `rgba(255, 240, 200, ${0.9 * (1 - k)})`;
         ctx.beginPath(); ctx.arc(f.x, f.y, r * 0.5, 0, 7); ctx.fill();
+      } else if (f.kind === 'dmgnum') {
+        // Floating damage number: rises and fades.
+        const y = f.y - k * 34;
+        ctx.globalAlpha = 1 - k;
+        ctx.font = 'bold 17px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#000';
+        ctx.fillText(f.text, f.x + 1, y + 1);
+        ctx.fillStyle = f.color || '#ffd75e';
+        ctx.fillText(f.text, f.x, y);
+        ctx.globalAlpha = 1;
       }
     }
   }
