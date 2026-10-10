@@ -215,46 +215,7 @@ async function animateEvents(result) {
   }
   if (specialFlash) await frames(450, () => {});
 
-  // Phase 1: TORPEDOES fire immediately, each in turn. Constant flight speed
-  // (px/sec) so long shots feel weighty. Hits explode with damage numbers;
-  // a clean miss flies offscreen.
-  const TORP_SPEED = 230; // px per second
-  for (const e of events.filter((x) => x.t === 'torp')) {
-    const a = board.toScreen(e.from.col, e.from.row);
-    const b = board.toScreen(e.target.col, e.target.row);
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const distPx = Math.hypot(dx, dy);
-    if (distPx < 8) continue; // targeted own hex: fizzle, no torp
-    let tx, ty, stopK = 1;
-    if (e.hit && e.victimId) {
-      const v = newState.ships.find((s) => s.id === e.victimId);
-      const vp = v ? board.toScreen(v.col, v.row) : b;
-      // stop at the victim (project onto ray)
-      const len = distPx || 1;
-      const t = ((vp.x - a.x) * dx + (vp.y - a.y) * dy) / (len * len);
-      tx = a.x + dx * Math.max(0, t); ty = a.y + dy * Math.max(0, t);
-      stopK = Math.min(1, Math.hypot(tx - a.x, ty - a.y) / distPx);
-    } else {
-      const len = distPx || 1;
-      tx = b.x + (dx / len) * 420; ty = b.y + (dy / len) * 420;
-    }
-    const flightPx = Math.hypot(tx - a.x, ty - a.y);
-    const flightMs = Math.max(300, Math.round((flightPx / TORP_SPEED) * 1000));
-    board.addFx({ kind: 'torp', x1: a.x, y1: a.y, x2: tx, y2: ty, life: flightMs });
-    await frames(flightMs, () => {});
-    if (e.hit) {
-      board.addFx({ kind: 'blast', x: tx, y: ty, maxR: board.size * 1.1, life: 450 });
-      const hitEv = events.find((x) => x.t === 'hit' && x.via === 'torpedoes' && x.id === e.victimId);
-      board.addFx({
-        kind: 'dmgnum', x: tx, y: ty - 12,
-        text: '-' + (hitEv ? hitEv.dmg : ''), color: '#ff9e5e', life: 1100,
-      });
-      await frames(450, () => {});
-    }
-    // else: clean miss — torp flies offscreen, no text needed.
-  }
-
-  // Phase 2: ships glide. Phaser beams fire continuously, sweeping from each
+  // Phase 1: ships glide. Phaser beams fire continuously, sweeping from each
   // ship's live position; hits flash with damage numbers as the beam crosses.
   const beamFirers = new Map();
   for (const e of events.filter((x) => x.t === 'beam')) beamFirers.set(e.id, e.to);
@@ -300,6 +261,10 @@ async function animateEvents(result) {
   });
   board.clearShipScreenPos();
   board.beamTargets = {};
+  // Commit to end positions BEFORE torpedoes fly, so they strike ships
+  // where they actually are.
+  state = newState;
+  render();
   for (const h of pendingHits) {
     if (h.shown) continue;
     h.shown = true;
@@ -309,8 +274,46 @@ async function animateEvents(result) {
   }
   if (pendingHits.length) await frames(400, () => {});
 
+  // Phase 2: TORPEDOES. Ships are now at their destinations, so torps\n  // launch from start hexes and strike where victims actually are. Constant flight speed
+  // (px/sec) so long shots feel weighty. Hits explode with damage numbers;
+  // a clean miss flies offscreen.
+  const TORP_SPEED = 230; // px per second
+  for (const e of events.filter((x) => x.t === 'torp')) {
+    const a = board.toScreen(e.from.col, e.from.row);
+    const b = board.toScreen(e.target.col, e.target.row);
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const distPx = Math.hypot(dx, dy);
+    if (distPx < 8) continue; // targeted own hex: fizzle, no torp
+    let tx, ty, stopK = 1;
+    if (e.hit && e.victimId) {
+      const v = newState.ships.find((s) => s.id === e.victimId);
+      const vp = v ? board.toScreen(v.col, v.row) : b;
+      // stop at the victim (project onto ray)
+      const len = distPx || 1;
+      const t = ((vp.x - a.x) * dx + (vp.y - a.y) * dy) / (len * len);
+      tx = a.x + dx * Math.max(0, t); ty = a.y + dy * Math.max(0, t);
+      stopK = Math.min(1, Math.hypot(tx - a.x, ty - a.y) / distPx);
+    } else {
+      const len = distPx || 1;
+      tx = b.x + (dx / len) * 420; ty = b.y + (dy / len) * 420;
+    }
+    const flightPx = Math.hypot(tx - a.x, ty - a.y);
+    const flightMs = Math.max(300, Math.round((flightPx / TORP_SPEED) * 1000));
+    board.addFx({ kind: 'torp', x1: a.x, y1: a.y, x2: tx, y2: ty, life: flightMs });
+    await frames(flightMs, () => {});
+    if (e.hit) {
+      board.addFx({ kind: 'blast', x: tx, y: ty, maxR: board.size * 1.1, life: 450 });
+      const hitEv = events.find((x) => x.t === 'hit' && x.via === 'torpedoes' && x.id === e.victimId);
+      board.addFx({
+        kind: 'dmgnum', x: tx, y: ty - 12,
+        text: '-' + (hitEv ? hitEv.dmg : ''), color: '#ff9e5e', life: 1100,
+      });
+      await frames(450, () => {});
+    }
+    // else: clean miss — torp flies offscreen, no text needed.
+  }
+
   // Phase 3: explosions for destroyed ships.
-  state = newState;
   board.doomed = doomed;
   render();
   for (const e of events) {
