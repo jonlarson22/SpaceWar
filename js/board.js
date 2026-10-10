@@ -13,6 +13,9 @@ export class Board {
     this.moveOptions = [];   // valid destination hexes to highlight
     this.targetHex = null;   // attack target hex highlight
     this.shipScreenPos = {}; // shipId -> {x, y} override (for animations)
+    this.beamTargets = {};   // shipId -> {col, row}: phaser beam, drawn from the
+                             // ship's current (possibly interpolated) position
+    this.doomed = new Set(); // ship ids to keep drawing until their explosion
     this.fx = [];            // active effects: {kind, ...}
     this.resize();
   }
@@ -164,7 +167,7 @@ export class Board {
 
   drawShips(ctx, state) {
     for (const ship of state.ships) {
-      if (!ship.alive) continue;
+      if (!ship.alive && !this.doomed.has(ship.id)) continue;
       const override = this.shipScreenPos[ship.id];
       const s = override || this.toScreen(ship.col, ship.row);
       const img = spriteFor(ship.race);
@@ -180,6 +183,18 @@ export class Board {
         ctx.strokeStyle = '#ffd75e';
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(s.x, s.y, dim * 0.62, 0, 7); ctx.stroke();
+      }
+      // Phaser beam: drawn from the ship's current position (which may be
+      // mid-glide), so the beam visibly sweeps while the ship moves.
+      const bt = this.beamTargets[ship.id];
+      if (bt) {
+        const t = this.toScreen(bt.col, bt.row);
+        ctx.strokeStyle = 'rgba(120, 220, 255, 0.85)';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(t.x, t.y); ctx.stroke();
       }
     }
   }

@@ -116,49 +116,85 @@ function frames(ms, draw) {
   });
 }
 
-async function animateEvents(events) {
+async function animateEvents(result) {
+  const newState = result.state;
+  const events = result.events;
+  const doomed = new Set(events.filter((e) => e.t === 'boom').map((e) => e.id));
+
+  // Phase 1: torpedoes launch IMMEDIATELY from start positions and fly a
+  // straight ray through the target hex. A miss keeps flying off.
+  for (const e of events.filter((x) => x.t === 'torp')) {
+    const a = board.toScreen(e.from.col, e.from.row);
+    const b = board.toScreen(e.target.col, e.target.row);
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    // Fly past the target and off: extend well beyond.
+    const far = { x: b.x + (dx / len) * 500, y: b.y + (dy / len) * 500 };
+    let stop = far;
+    let stopK = 1;
+    if (e.hit && e.victimId) {
+      const v = newState.ships.find((s) => s.id === e.victimId);
+      if (v) {
+        const vp = board.toScreen(v.col, v.row);
+        // fraction along a->far where the victim sits
+        const total = Math.hypot(far.x - a.x, far.y - a.y);
+        const toV = Math.hypot(vp.x - a.x, vp.y - a.y);
+        stopK = Math.min(1, toV / total);
+        stop = vp;
+      }
+    }
+    const flightMs = Math.round(650 * stopK);
+    board.addFx({ kind: 'torp', x1: a.x, y1: a.y, x2: stop.x, y2: stop.y, life: flightMs });
+    await frames(flightMs, () => {});
+    if (e.hit) {
+      board.addFx({ kind: 'blast', x: stop.x, y: stop.y, maxR: board.size * 1.1, life: 450 });
+      await frames(450, () => {});
+    }
+  }
+
+  // Phase 2: ships glide to destinations. Phasers fire CONTINUOUSLY during
+  // the move — beams are drawn from each ship's interpolated position, so
+  // they visibly sweep across hexes along the way.
+  for (const e of events.filter((x) => x.t === 'beam')) {
+    board.beamTargets[e.id] = e.to;
+  }
   const moves = events.filter((e) => e.t === 'move');
-  if (moves.length) {
+  if (moves.length || Object.keys(board.beamTargets).length) {
     const pts = moves.map((m) => ({
       id: m.id,
       a: board.toScreen(m.from.col, m.from.row),
       b: board.toScreen(m.to.col, m.to.row),
     }));
-    await frames(650, (k) => {
-      const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; // easeInOut
+    await frames(750, (k) => {
+      const ez = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
       for (const p of pts) {
-        board.setShipScreenPos(p.id, p.a.x + (p.b.x - p.a.x) * e, p.a.y + (p.b.y - p.a.y) * e);
+        board.setShipScreenPos(p.id, p.a.x + (p.b.x - p.a.x) * ez, p.a.y + (p.b.y - p.a.y) * ez);
       }
     });
     board.clearShipScreenPos();
   }
-  // attacks are sequential, in event order
+  board.beamTargets = {};
+
+  // Phase 3: now at end positions — phaser hit flashes, then explosions.
+  // (This ordering fixes the old jump-back bug: weapons no longer fire
+  // while ships are drawn at their start hexes.)
+  state = newState;
+  board.doomed = doomed;
+  render();
   for (const e of events) {
-    if (e.t === 'beam') {
-      const a = board.toScreen(e.from.col, e.from.row);
-      const b = board.toScreen(e.to.col, e.to.row);
-      board.addFx({ kind: 'beam', x1: a.x, y1: a.y, x2: b.x, y2: b.y, life: 380 });
-      await frames(380, () => {});
-    } else if (e.t === 'torp') {
-      const a = board.toScreen(e.from.col, e.from.row);
-      const b = board.toScreen(e.to.col, e.to.row);
-      board.addFx({ kind: 'torp', x1: a.x, y1: a.y, x2: b.x, y2: b.y, life: 520 });
-      await frames(520, () => {});
-      if (e.hit) {
-        board.addFx({ kind: 'blast', x: b.x, y: b.y, maxR: board.size * 1.1, life: 450 });
-        await frames(450, () => {});
-      }
+    if (e.t === 'hit' && e.via === 'phasers') {
+      const s = board.toScreen(e.at.col, e.at.row);
+      board.addFx({ kind: 'blast', x: s.x, y: s.y, maxR: board.size * 0.9, life: 350 });
+      await frames(350, () => {});
     } else if (e.t === 'boom' || e.t === 'selfdestruct') {
       const s = board.toScreen(e.at.col, e.at.row);
       board.addFx({ kind: 'blast', x: s.x, y: s.y, maxR: board.size * 1.6, life: 650 });
       await frames(650, () => {});
-    } else if (e.t === 'hit' && e.via === 'phasers') {
-      // phaser hit flash (torpedo hits already show a blast on arrival)
-      const s = board.toScreen(e.at.col, e.at.row);
-      board.addFx({ kind: 'blast', x: s.x, y: s.y, maxR: board.size * 0.9, life: 350 });
-      await frames(350, () => {});
+      if (e.t === 'boom') board.doomed.delete(e.id);
+      render();
     }
   }
+  board.doomed.clear();
   board.clearFx();
 }
 
@@ -181,8 +217,7 @@ async function endTurn() {
 
   await wait(350); // let the player see their orders lock in
   const result = resolveTurn(state, orders);
-  await animateEvents(result.events);
-  state = result.state;
+  await animateEvents(result);
 
   if (state.phase === 'gameover') {
     uiMode = 'gameover';

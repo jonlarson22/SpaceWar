@@ -60,10 +60,45 @@ export function neighbors(col, row) {
   return out;
 }
 
-function toCube(col, row) {
+export function toCube(col, row) {
   const x = col - ((row - (row & 1)) / 2);
   const z = row;
   return { x, z, y: -x - z };
+}
+
+function cubeRound(x, y, z) {
+  let rx = Math.round(x), ry = Math.round(y), rz = Math.round(z);
+  const dx = Math.abs(rx - x), dy = Math.abs(ry - y), dz = Math.abs(rz - z);
+  if (dx > dy && dx > dz) rx = -ry - rz;
+  else if (dy > dz) ry = -rx - rz;
+  else rz = -rx - ry;
+  return { x: rx, y: ry, z: rz };
+}
+
+// Hexes on the straight line from a to b (inclusive). Used for phaser sweep
+// paths and torpedo rays.
+export function hexLine(a, b) {
+  const N = hexDistance(a, b);
+  const ac = toCube(a.col, a.row);
+  const bc = toCube(b.col, b.row);
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i <= N; i++) {
+    const t = N === 0 ? 0 : i / N;
+    const c = cubeRound(
+      ac.x + (bc.x - ac.x) * t,
+      ac.y + (bc.y - ac.y) * t,
+      ac.z + (bc.z - ac.z) * t
+    );
+    const row = c.z;
+    const col = c.x + ((row - (row & 1)) / 2);
+    const key = col + ',' + row;
+    if (inBounds(col, row) && !seen.has(key)) {
+      seen.add(key);
+      out.push({ col, row });
+    }
+  }
+  return out;
 }
 
 export function hexDistance(a, b) {

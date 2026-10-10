@@ -39,6 +39,7 @@ body {
 }
 #atk-row button.active { background: #2b4a7a; border-color: #4a90d9; }
 #atk-row button.danger.active { background: #7a2b2b; border-color: #d94a4a; }
+#atk-row button.wrap { font-size: 12px; line-height: 1.25; }
 #end-turn { background: #2e6b34 !important; border-color: #4caf50 !important; }
 #end-turn:disabled { opacity: 0.35; }
 #hint-row {

@@ -1,7 +1,7 @@
 // Turn engine: pure function, no UI. resolveTurn(state, orders) -> { state, events }.
 // Seeded RNG (mulberry32) keeps resolution deterministic — same seed + same
 // orders = same outcome, which is what future Firebase multiplayer needs.
-import { hexDistance, inBounds, neighbors, ROWS, COLS } from './hex.js';
+import { hexDistance, hexLine, hexToPixel, inBounds, neighbors, ROWS, COLS } from './hex.js';
 
 export function makeRng(seed) {
   let a = seed >>> 0;
@@ -51,10 +51,14 @@ export function resolveTurn(state, orders) {
   const ships = state.ships.map((s) => ({ ...s }));
 
   // 1. Movement (validated; illegal orders fall back to holding position).
+  // Start hexes are remembered: phasers sweep from where the ship was, and
+  // torpedoes launch from the start hex.
+  const starts = {};
   for (const ship of ships) {
     if (!ship.alive) continue;
     const o = orders[ship.id];
     const from = { col: ship.col, row: ship.row };
+    starts[ship.id] = { ...from };
     let dest = { ...from };
     if (o && o.moveTo && inBounds(o.moveTo.col, o.moveTo.row)) {
       const d = hexDistance(from, o.moveTo);
@@ -75,11 +79,35 @@ export function resolveTurn(state, orders) {
   const damage = {};
   const enemiesOf = (ship) => ships.filter((s) => s.alive && s.id !== ship.id);
 
+  // Torpedo ray: straight path from the firer's START hex through the target
+  // hex. Returns enemy ships (at end positions) near the ray, nearest first.
+  // A miss just keeps flying off.
+  function torpedoVictims(ship, start, target) {
+    const s = hexToPixel(start.col, start.row, 1);
+    const t = hexToPixel(target.col, target.row, 1);
+    const dx = t.x - s.x, dy = t.y - s.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 0.01) return [];
+    const ux = dx / len, uy = dy / len;
+    const found = [];
+    for (const other of enemiesOf(ship)) {
+      const p = hexToPixel(other.col, other.row, 1);
+      const rx = p.x - s.x, ry = p.y - s.y;
+      const along = rx * ux + ry * uy;
+      if (along < 0.3) continue; // behind the firer
+      const perp = Math.abs(rx * uy - ry * ux);
+      if (perp < 0.8) found.push({ ship: other, along });
+    }
+    found.sort((a, b) => a.along - b.along);
+    return found.map((f) => f.ship);
+  }
+
   for (const ship of ships) {
     if (!ship.alive) continue;
     const o = orders[ship.id];
     const atk = o ? o.attack : 'none';
-    const here = { col: ship.col, row: ship.row };
+    const here = { col: ship.col, row: ship.row };      // end hex
+    const start = starts[ship.id] || { ...here };        // start hex
 
     if (atk === 'selfdestruct') {
       events.push({ t: 'selfdestruct', id: ship.id, at: { ...here } });
@@ -94,37 +122,42 @@ export function resolveTurn(state, orders) {
     if (atk !== 'phasers' && atk !== 'torpedoes') continue;
     const target = o && o.target;
     if (!target || !inBounds(target.col, target.row)) continue;
-    const dist = hexDistance(here, target);
-    const victims = enemiesOf(ship).filter((s) => s.col === target.col && s.row === target.row);
 
     if (atk === 'phasers') {
-      // Phasers sweep a FIELD, not a single hex: the target hex plus its
-      // neighbors. Center takes full damage, the fringe takes half.
-      // (Manual: "your present speed and position in relation to the target
-      // hex determine the size of the field of your phaser fire.")
-      events.push({ t: 'beam', id: ship.id, from: { ...here }, to: { ...target } });
-      const field = [target, ...neighbors(target.col, target.row)];
-      const dmg = phaserDamage(ship, dist);
-      for (const hex of field) {
-        const isCenter = hex.col === target.col && hex.row === target.row;
-        const hexDmg = isCenter ? dmg : Math.max(1, Math.round(dmg / 2));
-        for (const v of enemiesOf(ship).filter((s) => s.col === hex.col && s.row === hex.row)) {
+      // The beam fires CONTINUOUSLY while the ship moves, sweeping from the
+      // start hex to the target and from the end hex to the target. Ships in
+      // hexes along the sweep take damage: full at the target hex, half
+      // along the way (a grazing pass, not a sustained hit).
+      events.push({ t: 'beam', id: ship.id, to: { ...target } });
+      const swept = new Map();
+      for (const h of [...hexLine(start, target), ...hexLine(here, target), ...neighbors(target.col, target.row)]) {
+        swept.set(h.col + ',' + h.row, h);
+      }
+      const full = phaserDamage(ship, hexDistance(here, target));
+      for (const h of swept.values()) {
+        const isTarget = h.col === target.col && h.row === target.row;
+        const hexDmg = isTarget ? full : Math.max(1, Math.round(full / 2));
+        for (const v of enemiesOf(ship).filter((s) => s.col === h.col && s.row === h.row)) {
           damage[v.id] = (damage[v.id] || 0) + hexDmg;
           events.push({ t: 'hit', id: v.id, dmg: hexDmg, via: 'phasers', at: { col: v.col, row: v.row } });
         }
       }
     } else {
-      for (const v of victims) {
-        const p = torpedoHitChance(ship, dist, v.speed);
+      // Torpedoes launch IMMEDIATELY from the start hex along a straight ray.
+      // First enemy ship on the ray takes the hit roll; a miss flies off.
+      const victims = torpedoVictims(ship, start, target);
+      const victim = victims[0];
+      if (victim) {
+        const dist = hexDistance(start, victim);
+        const p = torpedoHitChance(ship, dist, victim.speed);
         const hit = rng() < p;
-        events.push({ t: 'torp', id: ship.id, from: { ...here }, to: { ...target }, hit });
+        events.push({ t: 'torp', id: ship.id, from: { ...start }, target: { ...target }, hit, victimId: victim.id });
         if (hit) {
-          damage[v.id] = (damage[v.id] || 0) + ship.torpedoes;
-          events.push({ t: 'hit', id: v.id, dmg: ship.torpedoes, via: 'torpedoes', at: { col: v.col, row: v.row } });
+          damage[victim.id] = (damage[victim.id] || 0) + ship.torpedoes;
+          events.push({ t: 'hit', id: victim.id, dmg: ship.torpedoes, via: 'torpedoes', at: { col: victim.col, row: victim.row } });
         }
-      }
-      if (victims.length === 0) {
-        events.push({ t: 'torp', id: ship.id, from: { ...here }, to: { ...target }, hit: false });
+      } else {
+        events.push({ t: 'torp', id: ship.id, from: { ...start }, target: { ...target }, hit: false, victimId: null });
       }
     }
   }
