@@ -135,9 +135,10 @@ function onTap(clientX, clientY) {
   if (ship) {
     // Like the original: tapping a ship shows its identity. Enemies also
     // show shield strength so you can see your damage land.
+    // (Temporarily showing col,row for debugging off-grid ships.)
     hexInfo.textContent = ship.isPlayer
       ? `${ship.name} — ${hexLabel(hex.col, hex.row)}`
-      : `${ship.name} — Shld ${ship.shields}`;
+      : `${ship.name} — Shld ${ship.shields} [${ship.col},${ship.row}]`;
   } else {
     hexInfo.textContent = hexLabel(hex.col, hex.row);
   }
